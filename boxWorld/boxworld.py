@@ -189,32 +189,17 @@ def update_values(state_sequence):
         Values[state_string + "^" + action_string] = (discount_factor ** (i + 1)) * goal_state_value
     Values[goal_state_string] = goal_state_value
 
-def get_remaining_action(random_action,action_list,random_box,boxes_list,random_truck,trucks_list):
 
-    all_rem_things = []
-    rem_actions = [];rem_boxes = [];rem_trucks = []
-    for each_action in action_list:
-        if each_action != random_action:
-            rem_actions.append(each_action)
-    for each_box in boxes_list:
-        if each_box != random_box:
-            rem_boxes.append(each_box)
-    for each_truck in trucks_list:
-        if each_truck != random_truck:
-            rem_trucks.append(each_truck)
-    all_rem_things.append(rem_actions);all_rem_things.append(rem_boxes);all_rem_things.append(rem_trucks)
-    return all_rem_things
-
-def neg_action_generator(all_rem_things):
+def neg_action_generator(action_list,boxes_list,trucks_list,current_action):
 
     all_neg_actions = []
-    rem_actions = all_rem_things[0];rem_boxes = all_rem_things[1];rem_trucks = all_rem_things[2]
-    trucks_blocks_combo = [(x,y) for x in rem_boxes for y in rem_trucks]
+    trucks_blocks_combo = [(x,y) for x in boxes_list for y in trucks_list]
     print ("trucks_blocks_combo------>",trucks_blocks_combo)
-    for each_action in rem_actions:
+    for each_action in action_list:
         for each_combo in trucks_blocks_combo:
             all_neg_actions.append(each_action+","+str(each_combo[1])+","+str(each_combo[0]))
     print ("all_neg_actions---->",all_neg_actions)
+    all_neg_actions.remove(current_action)
 
     return all_neg_actions
 
@@ -238,8 +223,8 @@ for trajectory in range(number_of_trajectories):
         print ("action: ",random_action,"truck: ",random_truck,"box: ",random_box)
 
 
-
-        state_sequence.append((state_copy, random_action + "," + str(random_truck) + "," + str(random_box),neg_action_generator(get_remaining_action(random_action,actions,random_box,state.boxes,random_truck,state.trucks))))
+        current_action = random_action + "," + str(random_truck) + "," + str(random_box)
+        state_sequence.append((state_copy, random_action + "," + str(random_truck) + "," + str(random_box),neg_action_generator(actions,state.boxes,state.trucks,current_action)))
         state = state.take_action(random_action, random_truck, random_box)
         print ("-" * 40)
         if random_action == "move":
