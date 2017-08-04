@@ -1,5 +1,7 @@
 from random import randint
 from copy import deepcopy
+import itertools
+
 class Box(object):
     '''class for a particular box instance'''
 
@@ -129,18 +131,20 @@ def get_RDN_facts(world_state,action="Noop",truck=False,box=False):
     dicti = world_state.trucks_dictionary
     all_boxes = world_state.boxes
     truck_boxes = []
+    facts = []
     for truc in dicti:
         value = dicti[truc]
         boxes = value[0]
         truck_boxes += boxes
         location = value[1]
         #print truck,boxes,location
-        print "tIn(t"+str(truc.truck_number)+","+str(truc.location)+",s"+str(world_state.state_number)+")."
+        facts.append("tIn(t"+str(truc.truck_number)+","+str(truc.location)+",s"+str(world_state.state_number)+").")
         for box in boxes:
-            print "bIn(b"+str(box.box_number)+",t"+str(truc.truck_number)+",s"+str(world_state.state_number)+")."
+            facts.append("bIn(b"+str(box.box_number)+",t"+str(truc.truck_number)+",s"+str(world_state.state_number)+").")
     boxes_not_on_trucks = [b for b in all_boxes if b not in truck_boxes]
     for b in boxes_not_on_trucks:
-        print "bIn(b"+str(b.box_number)+","+b.location+",s"+str(world_state.state_number)+")."
+        facts.append("bIn(b"+str(b.box_number)+","+b.location+",s"+str(world_state.state_number)+").")
+    return facts
 
 def goal_state(state):
     '''returns True if goal state attained'''
@@ -149,7 +153,7 @@ def goal_state(state):
             return True
     return False
 
-number_of_trajectories = 1
+number_of_trajectories = 2
 actions = ["move","load","unload"]
 Values = {}
 
@@ -169,33 +173,85 @@ def update_values(state_sequence):
         #print "reached here"
         Values[state_string+"^"+action_string] = (discount_factor**(i+1))*goal_state_value
     Values[goal_state_string] = goal_state_value
-    
+
+def neg_action_generator(action_list,boxes_list,trucks_list,current_action,state_number):
+    '''returns all negative actions'''
+    all_neg_actions = []
+    trucks_blocks_combo = [(x,y) for x in boxes_list for y in trucks_list]
+    #print ("trucks_blocks_combo------>",trucks_blocks_combo)
+    #print ("pos: "+current_action)
+    for each_action in action_list:
+        for each_combo in trucks_blocks_combo:
+            if each_action == "move":
+                if each_action+"("+str(each_combo[1])+","+"source"+",s"+str(state_number)+")." not in all_neg_actions:
+                    all_neg_actions.append(each_action+"("+str(each_combo[1])+","+"source"+",s"+str(state_number)+").")
+                if each_action+"("+str(each_combo[1])+","+"destination"+",s"+str(state_number)+")." not in all_neg_actions:
+                    all_neg_actions.append(each_action+"("+str(each_combo[1])+","+"destination"+",s"+str(state_number)+").")
+            else:
+                if each_action+"("+str(each_combo[1])+","+str(each_combo[0])+",s"+str(state_number)+")." not in all_neg_actions:
+                    all_neg_actions.append(each_action+"("+str(each_combo[1])+","+str(each_combo[0])+",s"+str(state_number)+").")
+    #print ("all_neg_actions---->",all_neg_actions)
+    all_neg_actions.remove(current_action)
+
+    return all_neg_actions
+
+def write_facts(opText):
+    '''writes facts to file'''
+    with open("train_facts.txt", "a") as myfile:
+        for i in range(len(opText)):
+            myfile.write(opText[i]+'\n')
+
+
+def write_pos_neg(positiveList,negativeList):
+    '''writes positive and negative actions to file'''
+    with open("train_pos.txt", "a") as myfile:
+        for i in range(len(positiveList)):
+            myfile.write(positiveList[i]+'\n')
+
+    with open("train_neg.txt", "a") as myfile:
+        for i in range(len(negativeList)):
+            myfile.write(negativeList[i]+'\n')
+
+
+state_number = 1   
 for trajectory in range(number_of_trajectories):
-    state = World()
+    state = World(state_number)
     i = 0
     state_sequence = []
     while not goal_state(state):
-        print "="*40
+        #print "="*40
         random_truck = state.trucks[randint(0,len(state.trucks)-1)]
         random_box = state.boxes[randint(0,len(state.boxes)-1)]
         random_action = actions[randint(0,len(actions)-1)]
         state_copy = deepcopy(state)
-        get_RDN_facts(state_copy,random_action,random_truck,random_box)
+        current_action = ""
+        if random_action == "move":
+            current_action += random_action+"("+str(random_truck)+","+random_truck.location+",s"+str(state_copy.state_number)+")."
+        else:
+            current_action += random_action+"("+str(random_truck)+","+str(random_box)+",s"+str(state_copy.state_number)+")."
+        facts = get_RDN_facts(state_copy,random_action,random_truck,random_box)
+        neg = neg_action_generator(actions,state_copy.boxes,state_copy.trucks,current_action,state_copy.state_number)
+        write_facts(facts)
+        write_pos_neg([current_action],neg)
+        #print "facts: "+str(facts)
+        #print "neg: "+str(neg)
         #print "action: ",random_action,"truck: ",random_truck,"box: ",random_box
         state_sequence.append((state_copy,random_action+","+str(random_truck)+","+str(random_box)))
         state = state.take_action(random_action,random_truck,random_box)
-        print "-"*40
+        #print "-"*40
+        '''
         if random_action == "move":
             print "move(t"+str(random_truck.truck_number)+","+str(random_truck.location)+",s"+str(state_copy.state_number)+")."
         elif random_action == "load":
             print "load(b"+str(random_box.box_number)+",t"+str(random_truck.truck_number)+",s"+str(state_copy.state_number)+")."
         else:
             print "unload(b"+str(random_box.box_number)+",t"+str(random_truck.truck_number)+",s"+str(state_copy.state_number)+")."
-        
+        '''
         #print "-"*40
         i += 1
     state_sequence.append(deepcopy(state))
     update_values(state_sequence)
+    state_number += len(state_sequence)
 '''
 print "="*40
 for state in Values:
