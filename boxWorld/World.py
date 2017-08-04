@@ -175,28 +175,31 @@ for trajectory in range(number_of_trajectories):
     i = 0
     state_sequence = []
     while not goal_state(state):
+        print "="*40
         random_truck = state.trucks[randint(0,len(state.trucks)-1)]
         random_box = state.boxes[randint(0,len(state.boxes)-1)]
         random_action = actions[randint(0,len(actions)-1)]
         state_copy = deepcopy(state)
-        #get_RDN_facts(state_copy,random_action,random_truck,random_box)
+        get_RDN_facts(state_copy,random_action,random_truck,random_box)
         #print "action: ",random_action,"truck: ",random_truck,"box: ",random_box
         state_sequence.append((state_copy,random_action+","+str(random_truck)+","+str(random_box)))
         state = state.take_action(random_action,random_truck,random_box)
-        '''
+        print "-"*40
         if random_action == "move":
             print "move(t"+str(random_truck.truck_number)+","+str(random_truck.location)+",s"+str(state_copy.state_number)+")."
         elif random_action == "load":
             print "load(b"+str(random_box.box_number)+",t"+str(random_truck.truck_number)+",s"+str(state_copy.state_number)+")."
         else:
             print "unload(b"+str(random_box.box_number)+",t"+str(random_truck.truck_number)+",s"+str(state_copy.state_number)+")."
-        '''
+        
         #print "-"*40
         i += 1
     state_sequence.append(deepcopy(state))
     update_values(state_sequence)
+'''
 print "="*40
 for state in Values:
     print state
     print Values[state]
     print "-"*40
+'''
