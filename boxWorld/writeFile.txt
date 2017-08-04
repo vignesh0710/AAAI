@@ -1,0 +1,17 @@
+def writeFacts(opText):
+
+    with open("/Users/vigneshsureshbabu/Desktop/code/train/train_facts.txt", "a") as myfile:
+        for i in range(len(opText)):
+            myfile.write(opText[i]+'\n')
+
+
+def writePosNeg(positiveList,negativeList):
+
+    with open("/Users/vigneshsureshbabu/Desktop/code/train/train_pos.txt", "a") as myfile:
+        for i in range(len(positiveList)):
+            myfile.write(positiveList[i]+"."+'\n')
+
+    with open("/Users/vigneshsureshbabu/Desktop/code/train/train_neg.txt", "a") as myfile:
+        for i in range(len(negativeList)):
+            myfile.write(negativeList[i]+"."+'\n')
+
