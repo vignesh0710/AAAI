@@ -159,16 +159,21 @@ def update_values(state_sequence):
     '''
     discount_factor = 0.95
     goal_state_value = 10
+    goal_state_string = str(state_sequence[-1])
     state_sequence_without_goal_in_reverse = state_sequence[:-1][::-1]
     length_of_state_sequence_without_goal_in_reverse = len(state_sequence_without_goal_in_reverse)
     for i in range(length_of_state_sequence_without_goal_in_reverse):
-        state_string = str(state_sequence_without_goal_in_reverse[i])
-        Values[state_string] = (discount_factor**(i+1))*goal_state_value
+        #print state_sequence_without_goal_in_reverse[i]
+        state_string = str(state_sequence_without_goal_in_reverse[i][0])
+        action_string = state_sequence_without_goal_in_reverse[i][1]
+        #print "reached here"
+        Values[state_string+"^"+action_string] = (discount_factor**(i+1))*goal_state_value
+    Values[goal_state_string] = goal_state_value
     
 for trajectory in range(number_of_trajectories):
     state = World()
     i = 0
-    state_sequence = [deepcopy(state)]
+    state_sequence = []
     while not goal_state(state):
         random_truck = state.trucks[randint(0,len(state.trucks)-1)]
         random_box = state.boxes[randint(0,len(state.boxes)-1)]
@@ -176,7 +181,7 @@ for trajectory in range(number_of_trajectories):
         state_copy = deepcopy(state)
         #get_RDN_facts(state_copy,random_action,random_truck,random_box)
         #print "action: ",random_action,"truck: ",random_truck,"box: ",random_box
-        state_sequence.append(state_copy)
+        state_sequence.append((state_copy,random_action+","+str(random_truck)+","+str(random_box)))
         state = state.take_action(random_action,random_truck,random_box)
         '''
         if random_action == "move":
@@ -190,6 +195,7 @@ for trajectory in range(number_of_trajectories):
         i += 1
     state_sequence.append(deepcopy(state))
     update_values(state_sequence)
+print "="*40
 for state in Values:
     print state
     print Values[state]
