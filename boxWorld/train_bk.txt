@@ -1,0 +1,14 @@
+//useStdLogicVariables: true.
+setParam: treeDepth=4.
+setParam: nodeSize=2.
+setParam: numOfClauses=8.
+mode: tIn(+Truck,-City,+State).
+mode: tIn(-Truck,+City,+State).
+mode: bIn(+Box,-City,+State).
+mode: bIn(-Box,+City,+State).
+mode: bOn(+Box,-Truck,+State).
+mode: bOn(-Box,+Truck,+State).
+//target
+mode: move(+Truck,+City,+State).
+mode: unload(+Truck,+Box,+State).
+mode: load(+Truck,+Box,+State). 

@@ -1,6 +1,8 @@
 from random import randint
 from copy import deepcopy
 import itertools
+from subprocess import Popen
+from os import system,waitpid,listdir
 
 class Box(object):
     '''class for a particular box instance'''
@@ -126,7 +128,7 @@ class World(object):
                         box.location = "source"
         return self
 
-def get_RDN_facts(world_state,action="Noop",truck=False,box=False):
+def get_RDN_facts(world_state):
     '''generates facts,pos,neg'''
     dicti = world_state.trucks_dictionary
     all_boxes = world_state.boxes
@@ -140,7 +142,7 @@ def get_RDN_facts(world_state,action="Noop",truck=False,box=False):
         #print truck,boxes,location
         facts.append("tIn(t"+str(truc.truck_number)+","+str(truc.location)+",s"+str(world_state.state_number)+").")
         for box in boxes:
-            facts.append("bIn(b"+str(box.box_number)+",t"+str(truc.truck_number)+",s"+str(world_state.state_number)+").")
+            facts.append("bOn(b"+str(box.box_number)+",t"+str(truc.truck_number)+",s"+str(world_state.state_number)+").")
     boxes_not_on_trucks = [b for b in all_boxes if b not in truck_boxes]
     for b in boxes_not_on_trucks:
         facts.append("bIn(b"+str(b.box_number)+","+b.location+",s"+str(world_state.state_number)+").")
@@ -153,7 +155,7 @@ def goal_state(state):
             return True
     return False
 
-number_of_trajectories = 2
+number_of_trajectories = 10
 actions = ["move","load","unload"]
 Values = {}
 
@@ -174,7 +176,7 @@ def update_values(state_sequence):
         Values[state_string+"^"+action_string] = (discount_factor**(i+1))*goal_state_value
     Values[goal_state_string] = goal_state_value
 
-def neg_action_generator(action_list,boxes_list,trucks_list,current_action,state_number):
+def neg_action_generator(action_list,boxes_list,trucks_list,state_number,current_action=False):
     '''returns all negative actions'''
     all_neg_actions = []
     trucks_blocks_combo = [(x,y) for x in boxes_list for y in trucks_list]
@@ -191,29 +193,83 @@ def neg_action_generator(action_list,boxes_list,trucks_list,current_action,state
                 if each_action+"("+str(each_combo[1])+","+str(each_combo[0])+",s"+str(state_number)+")." not in all_neg_actions:
                     all_neg_actions.append(each_action+"("+str(each_combo[1])+","+str(each_combo[0])+",s"+str(state_number)+").")
     #print ("all_neg_actions---->",all_neg_actions)
-    all_neg_actions.remove(current_action)
+    if current_action != False:     
+        all_neg_actions.remove(current_action)
 
     return all_neg_actions
 
 def write_facts(opText):
     '''writes facts to file'''
-    with open("train_facts.txt", "a") as myfile:
+    with open("train/train_facts.txt", "a") as myfile:
         for i in range(len(opText)):
             myfile.write(opText[i]+'\n')
 
-
 def write_pos_neg(positiveList,negativeList):
     '''writes positive and negative actions to file'''
-    with open("train_pos.txt", "a") as myfile:
+    with open("train/train_pos.txt", "a") as myfile:
         for i in range(len(positiveList)):
             myfile.write(positiveList[i]+'\n')
 
-    with open("train_neg.txt", "a") as myfile:
+    with open("train/train_neg.txt", "a") as myfile:
         for i in range(len(negativeList)):
             myfile.write(negativeList[i]+'\n')
 
+def write_test_facts(opText):
+    '''writes facts to file'''
+    with open("test/test_facts.txt", "a") as myfile:
+        for i in range(len(opText)):
+            myfile.write(opText[i]+'\n')
 
-state_number = 1   
+def write_test_pos(positiveList):
+    '''writes positive and negative actions to file'''
+    with open("test/test_pos.txt", "a") as myfile:
+        for i in range(len(positiveList)):
+            myfile.write(positiveList[i]+'\n')
+
+
+def call_process(call):
+    '''spawns a process to execute a shell process'''
+    process = Popen(call,shell=True)
+    waitpid(process.pid,0)
+
+def make_train_and_test_directory():
+    '''makes the train directory'''
+    call_process('mkdir train')
+    call_process('cp train_bk.txt train')
+    call_process('mkdir test')
+    call_process('cp train_bk.txt test')
+    call_process('mv test/train_bk.txt test/test_bk.txt')
+
+def remove_files():
+    '''removes files after each run'''
+    call_process('rm train/train_facts.txt')
+    call_process('rm train/train_pos.txt')
+    call_process('rm train/train_neg.txt')
+
+def perform_inference_and_choose(state,state_number,actions):
+    '''returns action in the state with highest probability'''
+    test_facts = get_RDN_facts(state)
+    #print test_facts
+    test_pos = neg_action_generator(actions,state.boxes,state.trucks,state.state_number)
+    #print test_pos
+    write_test_facts(test_facts)
+    write_test_pos(test_pos)
+    call_process('touch test/test_neg.txt')
+    call_process('java -jar BoostSRL-v1-0.jar -i -test test -model train/models -target move,load,unload -aucJarPath . ')
+    exit()
+
+def construct_pos_best_action_for_learning(state_sequence):
+    '''picks action with highest value'''
+    print Values
+    print state_sequence
+    exit()
+
+def construct_neg_action_for_learning(pos_action,state_sequence):
+    '''constructs negative action as all actions except pos_action for each state'''
+    pass # --> CONTINUE HERE TOMORROW
+
+state_number = 1
+pos_action  = []
 for trajectory in range(number_of_trajectories):
     state = World(state_number)
     i = 0
@@ -222,21 +278,27 @@ for trajectory in range(number_of_trajectories):
         #print "="*40
         random_truck = state.trucks[randint(0,len(state.trucks)-1)]
         random_box = state.boxes[randint(0,len(state.boxes)-1)]
-        random_action = actions[randint(0,len(actions)-1)]
         state_copy = deepcopy(state)
+        random_action = None        
+        if "models" not in listdir("train"):
+            random_action = actions[randint(0,len(actions)-1)]
+        else:
+            random_action_truck_and_box = perform_inference_and_choose(state_copy,state_number,actions)
         current_action = ""
         if random_action == "move":
             current_action += random_action+"("+str(random_truck)+","+random_truck.location+",s"+str(state_copy.state_number)+")."
         else:
             current_action += random_action+"("+str(random_truck)+","+str(random_box)+",s"+str(state_copy.state_number)+")."
-        facts = get_RDN_facts(state_copy,random_action,random_truck,random_box)
-        neg = neg_action_generator(actions,state_copy.boxes,state_copy.trucks,current_action,state_copy.state_number)
+        facts = get_RDN_facts(state_copy)
+        #neg = neg_action_generator(actions,state_copy.boxes,state_copy.trucks,state_copy.state_number,current_action)
+        if "train" not in listdir(".") or "test" not in listdir("."):
+            make_train_and_test_directory()
         write_facts(facts)
-        write_pos_neg([current_action],neg)
+        #write_pos_neg([current_action],neg)
         #print "facts: "+str(facts)
         #print "neg: "+str(neg)
         #print "action: ",random_action,"truck: ",random_truck,"box: ",random_box
-        state_sequence.append((state_copy,random_action+","+str(random_truck)+","+str(random_box)))
+        state_sequence.append((state_copy,random_action+","+str(random_truck)+","+str(random_box),state_number,deepcopy(state_copy)))
         state = state.take_action(random_action,random_truck,random_box)
         #print "-"*40
         '''
@@ -251,7 +313,16 @@ for trajectory in range(number_of_trajectories):
         i += 1
     state_sequence.append(deepcopy(state))
     update_values(state_sequence)
+    pos_actions += construct_pos_best_action_for_learning(state_sequence)
+    neg_actions += construct_neg_action_for_learning(pos_action,state_sequence)
     state_number += len(state_sequence)
+    if trajectory%5==0:
+        raw_input("Continue learning?")
+        call_process('rm -rf train/models')
+        call_process('java -jar BoostSRL-v1-0.jar -l -train train -target move,load,unload')
+        pos_action = []
+        neg_actions = []
+        remove_files()
 '''
 print "="*40
 for state in Values:
