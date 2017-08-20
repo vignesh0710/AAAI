@@ -100,6 +100,7 @@ class World(object):
                 return self
             else:
                 truck.boxes.append(box)
+                box.location = str(truck)
         if action == "unload":
             if not box:
                 print "there is no box to load"
@@ -120,16 +121,13 @@ class World(object):
             else:
                 if truck.location == "source":
                     truck.location = "destination"
-                    for box in truck.boxes:
-                        box.location = "destination"
                 else:
                     truck.location = "source"
-                    for box in truck.boxes:
-                        box.location = "source"
         return self
 
-def get_RDN_facts(world_state):
-    '''generates facts,pos,neg'''
+Values = {}
+
+def get_facts(world_state):
     dicti = world_state.trucks_dictionary
     all_boxes = world_state.boxes
     truck_boxes = []
@@ -148,6 +146,45 @@ def get_RDN_facts(world_state):
         facts.append("bIn(b"+str(b.box_number)+","+b.location+",s"+str(world_state.state_number)+").")
     return facts
 
+def get_RDN_facts_pos_neg(state_sequence,action_list):#,boxes_list,trucks_list),state_number,current_action=False)
+    '''returns facts for state'''
+    facts,pos,neg = [],[],[]
+    best_action_values = {}
+    for key in Values:
+        if Values[key] != 10:
+            state = '^'.join(key.split('^')[:-1])
+            action = key.split('^')[-1]
+            action_value = Values[key]
+            if state not in best_action_values.keys():
+                best_action_values[state] = (action,action_value)
+            else:
+                if action_value > best_action_values[state][1]:
+                    best_action_values[state] = (action,action_value)
+    for state in state_sequence[:-1]:
+        facts = get_facts(state[0]) #TODO += in the end
+        state_string = str(state[0])
+        state_id = "s"+str(state[2]) 
+        best_action = best_action_values[state_string][0]
+        action = best_action.split(',')[0]
+        truck = best_action.split(',')[1]
+        truck_location = None
+        for fact in facts:
+            if "tIn" in fact and truck in fact and state_id in fact:
+                truck_location = fact.split(',')[1]
+        box = best_action.split(',')[2]
+        if action == "move":
+            move_location = None
+            if truck_location == "source":
+                move_location = "destination"
+            else:
+                move_location = "source"
+            pos += [action+"("+str(truck)+","+move_location+","+state_id+")."]
+        else:
+            pos += [action+"("+str(truck)+","+str(box)+","+state_id+")."]
+        n = len(pos)-1
+        neg += neg_action_generator(action_list,state[0].boxes,state[0].trucks,state[2],pos[n])
+    return (facts,pos,neg)
+
 def goal_state(state):
     '''returns True if goal state attained'''
     for box in state.boxes:
@@ -155,9 +192,8 @@ def goal_state(state):
             return True
     return False
 
-number_of_trajectories = 10
+number_of_trajectories = 20
 actions = ["move","load","unload"]
-Values = {}
 
 def update_values(state_sequence):
     '''updates the values by back propogation
@@ -248,85 +284,50 @@ def remove_files():
 
 def perform_inference_and_choose(state,state_number,actions):
     '''returns action in the state with highest probability'''
-    test_facts = get_RDN_facts(state)
-    #print test_facts
+    test_facts = get_facts(state)
     test_pos = neg_action_generator(actions,state.boxes,state.trucks,state.state_number)
-    #print test_pos
     write_test_facts(test_facts)
     write_test_pos(test_pos)
     call_process('touch test/test_neg.txt')
     call_process('java -jar BoostSRL-v1-0.jar -i -test test -model train/models -target move,load,unload -aucJarPath . ')
     exit()
 
-def construct_pos_best_action_for_learning(state_sequence):
-    '''picks action with highest value'''
-    print Values
-    print state_sequence
-    exit()
 
-def construct_neg_action_for_learning(pos_action,state_sequence):
-    '''constructs negative action as all actions except pos_action for each state'''
-    pass # --> CONTINUE HERE TOMORROW
+def main():
+    state_number = 1
+    pos_action  = []
+    facts,pos,neg = [],[],[]
+    if "train" not in listdir(".") or "test" not in listdir("."):
+        make_train_and_test_directory()
+    for trajectory in range(number_of_trajectories):
+        state = World(state_number)
+        state_sequence = []
+        while not goal_state(state):
+            random_truck = state.trucks[randint(0,len(state.trucks)-1)]
+            random_box = state.boxes[randint(0,len(state.boxes)-1)]
+            state_copy = deepcopy(state)
+            random_action = None        
+            if "models" not in listdir("train"):
+                random_action = actions[randint(0,len(actions)-1)]
+            else:
+                random_action = actions[randint(0,len(actions)-1)]
+                random_action_truck_and_box = perform_inference_and_choose(state_copy,state_number,actions)
+            state_sequence.append((state_copy,random_action+","+str(random_truck)+","+str(random_box),state_copy.state_number,deepcopy(state_copy)))
+            state = state.take_action(random_action,random_truck,random_box)
+        state_sequence.append(deepcopy(state))
+        update_values(state_sequence)
+        facts_pos_neg = get_RDN_facts_pos_neg(state_sequence,actions)
+        facts += facts_pos_neg[0]
+        pos += facts_pos_neg[1]
+        neg += facts_pos_neg[2]
+        state_number += len(state_sequence)
+        if (trajectory+1)%10==0:
+            write_facts(facts)
+            write_pos_neg(pos,neg)
+            facts,pos,neg = [],[],[]
+            raw_input("Continue learning?")
+            call_process('rm -rf train/models')
+            call_process('java -jar BoostSRL-v1-0.jar -l -train train -target move,load,unload')
+            remove_files()
 
-state_number = 1
-pos_action  = []
-for trajectory in range(number_of_trajectories):
-    state = World(state_number)
-    i = 0
-    state_sequence = []
-    while not goal_state(state):
-        #print "="*40
-        random_truck = state.trucks[randint(0,len(state.trucks)-1)]
-        random_box = state.boxes[randint(0,len(state.boxes)-1)]
-        state_copy = deepcopy(state)
-        random_action = None        
-        if "models" not in listdir("train"):
-            random_action = actions[randint(0,len(actions)-1)]
-        else:
-            random_action_truck_and_box = perform_inference_and_choose(state_copy,state_number,actions)
-        current_action = ""
-        if random_action == "move":
-            current_action += random_action+"("+str(random_truck)+","+random_truck.location+",s"+str(state_copy.state_number)+")."
-        else:
-            current_action += random_action+"("+str(random_truck)+","+str(random_box)+",s"+str(state_copy.state_number)+")."
-        facts = get_RDN_facts(state_copy)
-        #neg = neg_action_generator(actions,state_copy.boxes,state_copy.trucks,state_copy.state_number,current_action)
-        if "train" not in listdir(".") or "test" not in listdir("."):
-            make_train_and_test_directory()
-        write_facts(facts)
-        #write_pos_neg([current_action],neg)
-        #print "facts: "+str(facts)
-        #print "neg: "+str(neg)
-        #print "action: ",random_action,"truck: ",random_truck,"box: ",random_box
-        state_sequence.append((state_copy,random_action+","+str(random_truck)+","+str(random_box),state_number,deepcopy(state_copy)))
-        state = state.take_action(random_action,random_truck,random_box)
-        #print "-"*40
-        '''
-        if random_action == "move":
-            print "move(t"+str(random_truck.truck_number)+","+str(random_truck.location)+",s"+str(state_copy.state_number)+")."
-        elif random_action == "load":
-            print "load(b"+str(random_box.box_number)+",t"+str(random_truck.truck_number)+",s"+str(state_copy.state_number)+")."
-        else:
-            print "unload(b"+str(random_box.box_number)+",t"+str(random_truck.truck_number)+",s"+str(state_copy.state_number)+")."
-        '''
-        #print "-"*40
-        i += 1
-    state_sequence.append(deepcopy(state))
-    update_values(state_sequence)
-    pos_actions += construct_pos_best_action_for_learning(state_sequence)
-    neg_actions += construct_neg_action_for_learning(pos_action,state_sequence)
-    state_number += len(state_sequence)
-    if trajectory%5==0:
-        raw_input("Continue learning?")
-        call_process('rm -rf train/models')
-        call_process('java -jar BoostSRL-v1-0.jar -l -train train -target move,load,unload')
-        pos_action = []
-        neg_actions = []
-        remove_files()
-'''
-print "="*40
-for state in Values:
-    print state
-    print Values[state]
-    print "-"*40
-'''
+main()
