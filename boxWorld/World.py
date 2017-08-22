@@ -4,6 +4,13 @@ import itertools
 from subprocess import Popen
 from os import system,waitpid,listdir
 
+'''
+global structures defined at the top
+'''
+
+Values = {}
+actions = ["move","load","unload"]
+
 class Box(object):
     '''class for a particular box instance'''
 
@@ -125,8 +132,6 @@ class World(object):
                     truck.location = "source"
         return self
 
-Values = {}
-
 def get_facts(world_state):
     dicti = world_state.trucks_dictionary
     all_boxes = world_state.boxes
@@ -191,9 +196,6 @@ def goal_state(state):
         if box.location == "destination":
             return True
     return False
-
-number_of_trajectories = 20
-actions = ["move","load","unload"]
 
 def update_values(state_sequence):
     '''updates the values by back propogation
@@ -282,36 +284,103 @@ def remove_files():
     call_process('rm train/train_pos.txt')
     call_process('rm train/train_neg.txt')
 
-def perform_inference_and_choose(state,state_number,actions):
+def remove_test_files():
+    '''remove test files after inference'''
+    call_process('rm test/*.db')
+    call_process('rm test/test_facts.txt')
+    call_process('rm test/test_pos.txt')
+    call_process('rm test/test_neg.txt')
+
+def read_file(filename):
+    '''reads file lines'''
+    if filename in listdir("test"):
+        with open(filename) as file:
+            return file.read().splitlines()
+    else:
+        return False
+
+def get_max_prob_action(action_result_file):
+    '''returns the action with max value for a state'''
+    max_prob = 0
+    best_action = False
+    for result in action_result_file:
+        prob = float(result.split(')')[1])
+        if prob > max_prob:
+            best_action = result.split(')')[0]+')'
+            max_prob = prob
+    return (best_action,max_prob)
+
+def perform_inference_and_choose(state,state_number,actions,random=False):
     '''returns action in the state with highest probability'''
+    best_action = []
+    if random:
+        action = actions[randint(0,len(actions)-1)]
+        box = state.boxes[randint(0,len(state.boxes)-1)]
+        truck = state.trucks[randint(0,len(state.trucks)-1)]
+        return (action,truck,box)
     test_facts = get_facts(state)
     test_pos = neg_action_generator(actions,state.boxes,state.trucks,state.state_number)
     write_test_facts(test_facts)
     write_test_pos(test_pos)
     call_process('touch test/test_neg.txt')
     call_process('java -jar BoostSRL-v1-0.jar -i -test test -model train/models -target move,load,unload -aucJarPath . ')
-    exit()
-
+    for action in actions:
+        action_result_file = read_file("test/results_"+action+".db")
+        if not action_result_file:
+            continue
+        max_prob_action = get_max_prob_action(action_result_file)
+        best_action.append(max_prob_action)
+    if not best_action:
+        action = actions[randint(0,len(actions)-1)]
+        box = state.boxes[randint(0,len(state.boxes)-1)]
+        truck = state.trucks[randint(0,len(state.trucks)-1)]
+        return (action,truck,box)
+    max_prob_for_all_actions = max([float(item[1]) for item in best_action])
+    for item in best_action:
+        if item[1] == max_prob_for_all_actions:
+            action = item[0].split('(')[0]
+            truck_id = item[0].split(',')[0].split('(')[1]
+            box_id = False
+            if 'b' in item[0]:
+                box_id = item[0].split(',')[1].strip()
+    print best_action
+    truck = [item for item in state.trucks if str(item)==truck_id][0]
+    if box_id:
+        box = [item for item in state.boxes if str(item)==box_id][0]
+    else:
+        box = state.boxes[randint(0,len(state.boxes)-1)]
+    remove_test_files()
+    return (action,truck,box)
 
 def main():
     state_number = 1
     pos_action  = []
     facts,pos,neg = [],[],[]
+    max_tolerance = 5
+    batch_size = 10
+    burn_in_time = 100
+    number_of_trajectories = 125
     if "train" not in listdir(".") or "test" not in listdir("."):
         make_train_and_test_directory()
     for trajectory in range(number_of_trajectories):
+        max_tolerance_reached = False
         state = World(state_number)
         state_sequence = []
         while not goal_state(state):
-            random_truck = state.trucks[randint(0,len(state.trucks)-1)]
-            random_box = state.boxes[randint(0,len(state.boxes)-1)]
             state_copy = deepcopy(state)
-            random_action = None        
-            if "models" not in listdir("train"):
-                random_action = actions[randint(0,len(actions)-1)]
+            if "models" not in listdir("train") or (trajectory+1) < burn_in_time:
+                action_specification = perform_inference_and_choose(state,state_number,actions,random=True)
             else:
-                random_action = actions[randint(0,len(actions)-1)]
-                random_action_truck_and_box = perform_inference_and_choose(state_copy,state_number,actions)
+                if len(state_sequence) > max_tolerance and not max_tolerance_reached:
+                    state_sequence = []
+                    max_tolerance_reached = True
+                if not max_tolerance_reached:
+                    action_specification = perform_inference_and_choose(state,state_number,actions)
+                else:
+                    action_specification = perform_inference_and_choose(state,state_number,actions,random=True)
+            random_action = action_specification[0]
+            random_truck = action_specification[1]
+            random_box = action_specification[2]
             state_sequence.append((state_copy,random_action+","+str(random_truck)+","+str(random_box),state_copy.state_number,deepcopy(state_copy)))
             state = state.take_action(random_action,random_truck,random_box)
         state_sequence.append(deepcopy(state))
@@ -321,11 +390,10 @@ def main():
         pos += facts_pos_neg[1]
         neg += facts_pos_neg[2]
         state_number += len(state_sequence)
-        if (trajectory+1)%10==0:
+        if (trajectory+1)%batch_size == 0 and (trajectory+1) > burn_in_time:
             write_facts(facts)
             write_pos_neg(pos,neg)
             facts,pos,neg = [],[],[]
-            raw_input("Continue learning?")
             call_process('rm -rf train/models')
             call_process('java -jar BoostSRL-v1-0.jar -l -train train -target move,load,unload')
             remove_files()
