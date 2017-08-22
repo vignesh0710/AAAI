@@ -312,6 +312,7 @@ def get_max_prob_action(action_result_file):
 
 def perform_inference_and_choose(state,state_number,actions,random=False):
     '''returns action in the state with highest probability'''
+    acceptance_threshold = 0.5
     best_action = []
     if random:
         action = actions[randint(0,len(actions)-1)]
@@ -329,7 +330,8 @@ def perform_inference_and_choose(state,state_number,actions,random=False):
         if not action_result_file:
             continue
         max_prob_action = get_max_prob_action(action_result_file)
-        best_action.append(max_prob_action)
+        if max_prob_action[1] > acceptance_threshold:
+            best_action.append(max_prob_action)
     if not best_action:
         action = actions[randint(0,len(actions)-1)]
         box = state.boxes[randint(0,len(state.boxes)-1)]
