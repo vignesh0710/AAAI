@@ -9,6 +9,7 @@ global structures defined at the top
 '''
 
 Values = {}
+Count = {}
 actions = ["move","load","unload"]
 
 class Box(object):
@@ -207,19 +208,25 @@ def update_values(state_sequence):
     state_sequence_without_goal_in_reverse = state_sequence[:-1][::-1]
     length_of_state_sequence_without_goal_in_reverse = len(state_sequence_without_goal_in_reverse)
     for i in range(length_of_state_sequence_without_goal_in_reverse):
-        #print state_sequence_without_goal_in_reverse[i]
         state_string = str(state_sequence_without_goal_in_reverse[i][0])
         action_string = state_sequence_without_goal_in_reverse[i][1]
-        #print "reached here"
-        Values[state_string+"^"+action_string] = (discount_factor**(i+1))*goal_state_value
+        key = state_string+"^"+action_string
+        if key in Count:
+            Count[key] += 1
+        else:
+            Count[key] = 1
+        new_value = (discount_factor**(i+1))*goal_state_value
+        if key in Values:
+            old_value = Values[key]
+        else:
+            old_value = 0
+        Values[key] = old_value + (1/float(Count[key]))*(new_value-old_value)
     Values[goal_state_string] = goal_state_value
 
 def neg_action_generator(action_list,boxes_list,trucks_list,state_number,current_action=False):
     '''returns all negative actions'''
     all_neg_actions = []
     trucks_blocks_combo = [(x,y) for x in boxes_list for y in trucks_list]
-    #print ("trucks_blocks_combo------>",trucks_blocks_combo)
-    #print ("pos: "+current_action)
     for each_action in action_list:
         for each_combo in trucks_blocks_combo:
             if each_action == "move":
@@ -230,7 +237,6 @@ def neg_action_generator(action_list,boxes_list,trucks_list,state_number,current
             else:
                 if each_action+"("+str(each_combo[1])+","+str(each_combo[0])+",s"+str(state_number)+")." not in all_neg_actions:
                     all_neg_actions.append(each_action+"("+str(each_combo[1])+","+str(each_combo[0])+",s"+str(state_number)+").")
-    #print ("all_neg_actions---->",all_neg_actions)
     if current_action != False:     
         all_neg_actions.remove(current_action)
 
@@ -358,10 +364,10 @@ def main():
     state_number = 1
     pos_action  = []
     facts,pos,neg = [],[],[]
-    max_tolerance = 5
+    max_tolerance = 20
     batch_size = 10
     burn_in_time = 100
-    number_of_trajectories = 125
+    number_of_trajectories = 121
     if "train" not in listdir(".") or "test" not in listdir("."):
         make_train_and_test_directory()
     for trajectory in range(number_of_trajectories):
